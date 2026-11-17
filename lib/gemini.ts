@@ -40,8 +40,6 @@ export async function geminiJSON<T>(opts: {
       temperature: opts.temperature ?? 0.7,
       responseMimeType: "application/json",
       responseSchema: opts.schema,
-      // Tắt "suy nghĩ" ở các model Flash để phản hồi nhanh (hội thoại cần độ trễ thấp)
-      ...(/flash/.test(opts.model) ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
     },
   };
   const r = await fetch(`${base}/v1beta/models/${opts.model}:generateContent`, {
