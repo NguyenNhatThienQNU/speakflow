@@ -5,12 +5,18 @@ export class AiError extends Error {
   constructor(message: string, public status = 500) { super(message); }
 }
 
+function clean(val: string | null | undefined): string | null {
+  if (!val) return null;
+  const c = val.replace(/[^\x20-\x7E]/g, "").trim();
+  return c || null;
+}
+
 export function getKey(req: Request): string | null {
-  return process.env.GEMINI_API_KEY || req.headers.get("x-user-gemini-key") || null;
+  return clean(process.env.GEMINI_API_KEY) || clean(req.headers.get("x-user-gemini-key"));
 }
 
 export function getModel(req: Request): string {
-  return req.headers.get("x-user-gemini-model") || process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+  return clean(req.headers.get("x-user-gemini-model")) || clean(process.env.GEMINI_MODEL) || "gemini-3.5-flash-lite";
 }
 
 type Part = { text: string } | { inlineData: { mimeType: string; data: string } };
