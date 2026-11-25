@@ -12,14 +12,30 @@ export function SpeakBtn({ text, slow = false, className = "", label }: { text: 
   );
 }
 
-export function MicBtn({ listening, onStart, onStop, size = "md" }: { listening: boolean; onStart: () => void; onStop: () => void; size?: "md" | "lg" }) {
+export function MicBtn({ listening, onStart, onStop, size = "md", disabled = false }: { listening: boolean; onStart: () => void; onStop: () => void; size?: "md" | "lg"; disabled?: boolean }) {
   const dim = size === "lg" ? "h-16 w-16" : "h-11 w-11";
   return (
-    <button type="button" onClick={listening ? onStop : onStart}
-      className={`grid ${dim} place-items-center rounded-full text-white shadow-md transition ${listening ? "recording bg-rose-500" : "bg-gradient-to-br from-sky-500 to-emerald-500 hover:brightness-110"}`}
+    <button type="button" disabled={disabled} onClick={listening ? onStop : onStart}
+      className={`grid ${dim} shrink-0 place-items-center rounded-full text-white shadow-md transition disabled:opacity-50 ${listening ? "recording bg-rose-500" : "bg-gradient-to-br from-sky-500 to-emerald-500 hover:brightness-110"}`}
       aria-label={listening ? "Dừng thu âm" : "Bắt đầu thu âm"}>
       {listening ? <Square size={size === "lg" ? 24 : 18} fill="white" /> : <Mic size={size === "lg" ? 28 : 20} />}
     </button>
+  );
+}
+
+/** Thanh hiển thị mức âm lượng micro theo thời gian thực */
+export function AudioLevelBar({ level }: { level: number }) {
+  const bars = [0.25, 0.5, 0.85, 1, 0.7, 0.4];
+  return (
+    <span className="inline-flex h-4 items-end gap-0.5" aria-hidden="true">
+      {bars.map((scale, i) => (
+        <span
+          key={i}
+          className="w-1 rounded-full bg-rose-500 transition-all duration-75"
+          style={{ height: `${Math.max(20, Math.min(100, Math.round(level * 100 * scale)))}%` }}
+        />
+      ))}
+    </span>
   );
 }
 

@@ -22,6 +22,16 @@ export function getModel(req: Request): string {
 type Part = { text: string } | { inlineData: { mimeType: string; data: string } };
 export interface Content { role: "user" | "model"; parts: Part[] }
 
+const FALLBACK_MODEL = "gemini-3.1-flash-lite";
+
+async function callGenerate(base: string, model: string, key: string, body: Record<string, unknown>) {
+  return fetch(`${base}/v1beta/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify(body),
+  });
+}
+
 /** Gọi Gemini và nhận về JSON đúng schema */
 export async function geminiJSON<T>(opts: {
   key: string;
@@ -42,11 +52,11 @@ export async function geminiJSON<T>(opts: {
       responseSchema: opts.schema,
     },
   };
-  const r = await fetch(`${base}/v1beta/models/${opts.model}:generateContent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": opts.key },
-    body: JSON.stringify(body),
-  });
+  let r = await callGenerate(base, opts.model, opts.key, body);
+  // Tự động chuyển sang model dự phòng nếu model chính đang quá tải (503) hoặc không khả dụng (404)
+  if ((r.status === 503 || r.status === 404) && opts.model !== FALLBACK_MODEL) {
+    r = await callGenerate(base, FALLBACK_MODEL, opts.key, body);
+  }
   if (!r.ok) {
     const txt = await r.text();
     let msg = txt;
@@ -54,6 +64,7 @@ export async function geminiJSON<T>(opts: {
     if (r.status === 400 && /API key/i.test(msg)) throw new AiError("Khoá Gemini không hợp lệ. Kiểm tra lại ở trang Cài đặt.", 401);
     if (r.status === 403) throw new AiError("Khoá Gemini bị từ chối (403). Kiểm tra khoá hoặc quyền của dự án Google AI Studio.", 403);
     if (r.status === 429) throw new AiError("Đã vượt giới hạn lượt gọi Gemini miễn phí. Đợi một lát rồi thử lại.", 429);
+    if (r.status === 503) throw new AiError("Máy chủ Gemini đang bận tạm thời. Bạn bấm thử lại sau vài giây nhé.", 503);
     throw new AiError(`Gemini lỗi ${r.status}: ${msg.slice(0, 200)}`, r.status);
   }
   const data = await r.json();
@@ -70,6 +81,26 @@ export async function geminiJSON<T>(opts: {
     if (m) return JSON.parse(m[0]) as T;
     throw new AiError("Gemini trả về dữ liệu không đúng định dạng JSON.", 502);
   }
+}
+
+const ALLOWED_AUDIO_MIMES = new Set([
+  "audio/webm",
+  "audio/ogg",
+  "audio/wav",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/aac",
+  "audio/flac",
+]);
+
+/** Kiểm tra và chuẩn hoá dữ liệu âm thanh base64 gửi lên */
+export function normalizeAudioInput(audioBase64?: string, mimeType?: string): { data: string; mimeType: string } {
+  const data = (audioBase64 ?? "").trim();
+  if (!data) throw new AiError("Không nhận được dữ liệu âm thanh.", 400);
+  if (data.length > 4_000_000) throw new AiError("Đoạn thu âm quá dài (tối đa ~3MB). Hãy đọc ngắn hơn nhé.", 413);
+  const cleanMime = (mimeType ?? "audio/webm").split(";")[0].trim().toLowerCase();
+  if (!ALLOWED_AUDIO_MIMES.has(cleanMime)) throw new AiError(`Định dạng âm thanh không hỗ trợ (${cleanMime}).`, 400);
+  return { data, mimeType: cleanMime };
 }
 
 // Một vài mẩu schema dùng lại
