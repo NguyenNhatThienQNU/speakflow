@@ -22,7 +22,7 @@ export function getModel(req: Request): string {
 type Part = { text: string } | { inlineData: { mimeType: string; data: string } };
 export interface Content { role: "user" | "model"; parts: Part[] }
 
-const FALLBACK_MODEL = "gemini-3.1-flash-lite";
+const FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
 
 async function callGenerate(base: string, model: string, key: string, body: Record<string, unknown>) {
   return fetch(`${base}/v1beta/models/${model}:generateContent`, {
@@ -31,6 +31,8 @@ async function callGenerate(base: string, model: string, key: string, body: Reco
     body: JSON.stringify(body),
   });
 }
+
+const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 /** Gọi Gemini và nhận về JSON đúng schema */
 export async function geminiJSON<T>(opts: {
@@ -52,10 +54,16 @@ export async function geminiJSON<T>(opts: {
       responseSchema: opts.schema,
     },
   };
-  let r = await callGenerate(base, opts.model, opts.key, body);
-  // Tự động chuyển sang model dự phòng nếu model chính đang quá tải (503) hoặc không khả dụng (404)
-  if ((r.status === 503 || r.status === 404) && opts.model !== FALLBACK_MODEL) {
-    r = await callGenerate(base, FALLBACK_MODEL, opts.key, body);
+
+  const tryOrder = [...new Set([opts.model, ...FALLBACK_MODELS])];
+  let r = await callGenerate(base, tryOrder[0], opts.key, body);
+  // Nếu gặp 503 (quá tải tạm thời) hoặc 404 (model không khả dụng), thử model dự phòng rồi thử lại nhanh 1 lần
+  if ((r.status === 503 || r.status === 404) && tryOrder.length > 1) {
+    r = await callGenerate(base, tryOrder[1], opts.key, body);
+  }
+  if (r.status === 503) {
+    await wait(600);
+    r = await callGenerate(base, tryOrder[0], opts.key, body);
   }
   if (!r.ok) {
     const txt = await r.text();
